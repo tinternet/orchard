@@ -11,6 +11,7 @@ struct ContainerDetailHeader: View {
     @State private var isDeleting = false
     @State private var isStarting = false
     @State private var isStopping = false
+    @State private var isRestarting = false
     @State private var wasRunningBeforeStop = false
     @State private var showSandboxInfo = false
 
@@ -100,6 +101,17 @@ struct ContainerDetailHeader: View {
         }
     }
 
+    private func restartContainer() {
+        guard !isRestarting else { return }
+        isRestarting = true
+        Task {
+            await containerListService.restartContainer(container.configuration.id)
+            await MainActor.run {
+                isRestarting = false
+            }
+        }
+    }
+
     private func deleteContainer() {
         guard !isDeleting else { return }
         isDeleting = true
@@ -132,16 +144,22 @@ struct ContainerDetailHeader: View {
             // Action buttons
             HStack(spacing: 12) {
                 if isRunning {
-                    // Container is running - show stop button and terminal options
+                    // Container is running - show stop & restart buttons and terminal options
                     Button("Stop") {
                         stopContainer()
                     }
                     .buttonStyle(BorderedProminentButtonStyle())
                     .tint(.orange)
-                    .disabled(isStopping)
+                    .disabled(isStopping || isRestarting)
 
-                    // Terminal buttons - only when running and not stopping
-                    if !isStopping {
+                    Button(isRestarting ? "Restarting..." : "Restart") {
+                        restartContainer()
+                    }
+                    .buttonStyle(BorderedButtonStyle())
+                    .disabled(isStopping || isRestarting)
+
+                    // Terminal buttons - only when running and not stopping or restarting
+                    if !isStopping && !isRestarting {
                         Button("Terminal (sh)") {
                             terminalLauncher.openTerminal(for: container.configuration.id)
                         }
@@ -159,10 +177,10 @@ struct ContainerDetailHeader: View {
                     }
                     .buttonStyle(BorderedProminentButtonStyle())
                     .tint(.green)
-                    .disabled(isStarting || isStopping || isDeleting || isTransitioning || !canStart)
+                    .disabled(isStarting || isStopping || isRestarting || isDeleting || isTransitioning || !canStart)
 
-                    // Delete button - only when stopped and not starting or transitioning
-                    if !isStarting && !isStopping && !isTransitioning {
+                    // Delete button - only when stopped and not mid-lifecycle-operation
+                    if !isStarting && !isStopping && !isRestarting && !isTransitioning {
                         Button("Delete", role: .destructive) {
                             showDeleteConfirmation = true
                         }
@@ -219,6 +237,7 @@ struct ContainerDetailHeader: View {
                 wasRunningBeforeStop = false
                 isStarting = false
                 isStopping = false
+                isRestarting = false
                 isDeleting = false
             }
         }
@@ -231,6 +250,10 @@ struct ContainerDetailHeader: View {
     }
 
     private var buttonTitle: String {
+        if isRestarting {
+            return "Restarting..."
+        }
+
         if isTransitioning {
             return "Transitioning..."
         }

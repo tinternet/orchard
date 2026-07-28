@@ -10,11 +10,12 @@ struct MultiContainerCardsView: View {
     @State private var pendingAction: BulkAction?
 
     private enum BulkAction: Identifiable {
-        case start, stop, remove
+        case start, stop, restart, remove
         var id: String {
             switch self {
             case .start: return "start"
             case .stop: return "stop"
+            case .restart: return "restart"
             case .remove: return "remove"
             }
         }
@@ -84,6 +85,10 @@ struct MultiContainerCardsView: View {
                 Button("Stop running containers") {
                     pendingAction = .stop
                 }
+
+                Button("Restart running containers") {
+                    pendingAction = .restart
+                }
             }
 
             if !stoppedIds.isEmpty {
@@ -102,6 +107,7 @@ struct MultiContainerCardsView: View {
         switch action {
         case .start: return stoppedIds
         case .stop: return runningIds
+        case .restart: return runningIds
         case .remove: return stoppedIds
         }
     }
@@ -111,6 +117,7 @@ struct MultiContainerCardsView: View {
         switch action {
         case .start: return "Start stopped containers?"
         case .stop: return "Stop running containers?"
+        case .restart: return "Restart running containers?"
         case .remove: return "Remove stopped containers?"
         }
     }
@@ -119,6 +126,7 @@ struct MultiContainerCardsView: View {
         switch action {
         case .start: return "Start"
         case .stop: return "Stop"
+        case .restart: return "Restart"
         case .remove: return "Remove"
         }
     }
@@ -129,6 +137,7 @@ struct MultiContainerCardsView: View {
         switch action {
         case .start: verb = "started"
         case .stop: verb = "stopped"
+        case .restart: verb = "restarted"
         case .remove: verb = "removed"
         }
         let header = "The following \(affected.count) container\(affected.count == 1 ? "" : "s") will be \(verb):"
@@ -144,6 +153,7 @@ struct MultiContainerCardsView: View {
                 switch action {
                 case .start: await containerListService.startContainer(id)
                 case .stop: await containerListService.stopContainer(id)
+                case .restart: await containerListService.restartContainer(id)
                 case .remove: await containerListService.removeContainer(id)
                 }
             }
@@ -201,6 +211,11 @@ private struct ContainerSummaryCard: View {
                     Button("Stop") {
                         let id = container.configuration.id
                         Task { await containerListService.stopContainer(id) }
+                    }
+
+                    Button("Restart") {
+                        let id = container.configuration.id
+                        Task { await containerListService.restartContainer(id) }
                     }
                 } else {
                     Button("Start") {

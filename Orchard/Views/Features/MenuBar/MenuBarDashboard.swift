@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Window-style menu-bar panel: two segmented resource rings (CPU / memory across running
-/// containers), a per-container breakdown with start/stop controls, and system controls.
+/// containers), a per-container breakdown with start/stop/restart controls, and system controls.
 struct MenuBarView: View {
     @EnvironmentObject var containerListService: ContainerListService
     @EnvironmentObject var builderService: BuilderService
@@ -219,6 +219,7 @@ struct MenuBarView: View {
                 Text("Stopped").font(.caption).foregroundColor(.secondary)
             }
 
+            restartButton(row)
             controlButton(row)
         }
         .contentShape(Rectangle())
@@ -233,6 +234,25 @@ struct MenuBarView: View {
             )
         }
         .contextMenu { rowMenu(row) }
+    }
+
+    /// Restart, offered only for a running container. The box is reserved on every row - empty
+    /// for stopped or busy ones - so the start/stop column stays aligned down the list.
+    private func restartButton(_ row: Row) -> some View {
+        Group {
+            if row.isRunning && !row.isLoading {
+                Button {
+                    Task { @MainActor in await containerListService.restartContainer(row.id) }
+                } label: {
+                    SwiftUI.Image(systemName: "arrow.clockwise")
+                        .imageScale(.small)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Restart")
+            }
+        }
+        .frame(width: 22, height: 16)
     }
 
     private func controlButton(_ row: Row) -> some View {
@@ -267,6 +287,7 @@ struct MenuBarView: View {
     private func rowMenu(_ row: Row) -> some View {
         if row.isRunning {
             Button("Stop") { Task { @MainActor in await containerListService.stopContainer(row.id) } }
+            Button("Restart") { Task { @MainActor in await containerListService.restartContainer(row.id) } }
         } else {
             Button("Start") { Task { @MainActor in await containerListService.startContainer(row.id) } }
             Button("Remove") { Task { @MainActor in await containerListService.removeContainer(row.id) } }

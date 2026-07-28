@@ -126,6 +126,34 @@ final class ContainerListService: ObservableObject {
         }
     }
 
+    /// Stop then start a container in one action. The runtime has no restart primitive, so
+    /// this sequences the two. The loading state spans the whole round trip.
+    func restartContainer(_ id: String) async {
+        loadingContainers.insert(id)
+        self.alertCenter.dismiss()
+
+        do {
+            try await backend.stopContainer(id: id)
+            Log.containers.debug("Container \(id) stop command sent for restart")
+        } catch {
+            loadingContainers.remove(id)
+            self.alertCenter.error("Failed to restart container: \(error.localizedDescription)")
+            Log.containers.error("Error stopping container for restart: \(error.localizedDescription)")
+            return
+        }
+
+        Task { await self.reloadBuilders() }
+
+        guard await waitUntilContainerStopped(id) else {
+            loadingContainers.remove(id)
+            self.alertCenter.error("Container did not stop in time, so it was not restarted. Start it manually once it has stopped.")
+            Log.containers.error("Container \(id) did not stop within the refresh window; restart aborted")
+            return
+        }
+
+        await startContainer(id)
+    }
+
     func startContainer(_ id: String, maxRetries: Int = 3, retryDelay: TimeInterval = 1.0) async {
         let shouldProceed = lockQueue.sync(flags: .barrier) {
             if containerOperationLocks.contains(id) { return false }
@@ -213,24 +241,28 @@ final class ContainerListService: ObservableObject {
     }
 
     private func refreshUntilContainerStopped(_ id: String) async {
+        if await waitUntilContainerStopped(id) {
+            Log.containers.debug("Container \(id) has stopped, removing loading state")
+        } else {
+            Log.containers.debug("Timeout reached for container \(id), removing loading state")
+        }
+        loadingContainers.remove(id)
+    }
+
+    /// Poll the list until `id` is no longer running (or is gone). Returns false if it is
+    /// still running after `maxRefreshAttempts`.
+    private func waitUntilContainerStopped(_ id: String) async -> Bool {
         var attempts = 0
 
         while attempts < maxRefreshAttempts {
             await loadContainers()
 
-            let shouldStop: Bool
             if let container = containers.first(where: { $0.configuration.id == id }) {
                 Log.containers.debug("Checking stop status for \(id): \(container.status)")
-                shouldStop = container.status.lowercased() != "running"
+                if container.status.lowercased() != "running" { return true }
             } else {
                 Log.containers.debug("Container \(id) not found, assuming stopped")
-                shouldStop = true
-            }
-
-            if shouldStop {
-                Log.containers.debug("Container \(id) has stopped, removing loading state")
-                loadingContainers.remove(id)
-                return
+                return true
             }
 
             attempts += 1
@@ -238,8 +270,7 @@ final class ContainerListService: ObservableObject {
             try? await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
         }
 
-        Log.containers.debug("Timeout reached for container \(id), removing loading state")
-        loadingContainers.remove(id)
+        return false
     }
 
     private func refreshUntilContainerStarted(_ id: String) async {

@@ -63,6 +63,59 @@ func forceStopContainerFailureAlerts() async {
     #expect(service.loadingContainers.contains("web") == false)
 }
 
+// MARK: - restart
+
+@MainActor
+@Test("restartContainer: stops, waits for the stop to land, then starts")
+func restartContainerStopsThenStarts() async throws {
+    let backend = MockContainerBackend()
+    let stopped = try makeContainer(id: "web", status: "stopped")
+    backend.containers = [try makeContainer(id: "web", status: "running")]
+    // The runtime reports the container stopped once the stop call lands - which is what the
+    // restart waits for before starting.
+    backend.stopContainerHandler = { _ in backend.containers = [stopped] }
+    let (service, alert) = makeListService(backend)
+
+    await service.restartContainer("web")
+    await awaitQuiescence { !service.loadingContainers.contains("web") }
+
+    #expect(backend.stoppedContainerIds == ["web"])
+    #expect(backend.bootstrapAndStartCount == 1)   // started only after the stop was observed
+    #expect(service.loadingContainers.contains("web") == false)
+    #expect(alert.current == nil)
+}
+
+@MainActor
+@Test("restartContainer: a stop failure alerts, clears loading, and never starts")
+func restartContainerStopFailureAlerts() async {
+    let backend = MockContainerBackend()
+    backend.stopContainerError = NotConfigured()
+    let (service, alert) = makeListService(backend)
+
+    await service.restartContainer("web")
+
+    #expect(alert.current != nil)
+    #expect(backend.bootstrapAndStartCount == 0)
+    #expect(service.loadingContainers.contains("web") == false)
+}
+
+@MainActor
+@Test("restartContainer: a container that never stops alerts instead of starting")
+func restartContainerStopTimesOut() async throws {
+    let backend = MockContainerBackend()
+    backend.containers = [try makeContainer(id: "web", status: "running")]   // never reports stopped
+    let (service, alert) = makeListService(backend)
+
+    await service.restartContainer("web")
+
+    // Starting a container the runtime still calls running fails as a transition error, so the
+    // restart aborts at the wait rather than issuing a doomed start.
+    #expect(backend.listContainersCount == service.maxRefreshAttempts)
+    #expect(backend.bootstrapAndStartCount == 0)
+    #expect(alert.current != nil)
+    #expect(service.loadingContainers.contains("web") == false)
+}
+
 // MARK: - remove
 
 @MainActor

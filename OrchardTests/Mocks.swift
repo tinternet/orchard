@@ -65,6 +65,7 @@ final class MockContainerBackend: ContainerBackend, @unchecked Sendable {
     private var _deleteContainerError: Error?
     private var _pingError: Error?
     private var _bootstrapAndStartHandler: (@Sendable (Int) throws -> Void)?
+    private var _stopContainerHandler: (@Sendable (String) -> Void)?
     private var _statsHandler: (@Sendable (String) throws -> Orchard.ContainerStats)?
 
     private var _pulledReferences: [String] = []
@@ -75,6 +76,7 @@ final class MockContainerBackend: ContainerBackend, @unchecked Sendable {
     private var _deletedContainers: [(id: String, force: Bool)] = []
     private var _bootstrapAndStartCount = 0
     private var _listContainersCount = 0
+    private var _stoppedContainerIds: [String] = []
 
     // Configuration - set by tests.
     var containers: [Container] {
@@ -142,6 +144,12 @@ final class MockContainerBackend: ContainerBackend, @unchecked Sendable {
         get { lock.withLock { _bootstrapAndStartHandler } }
         set { lock.withLock { _bootstrapAndStartHandler = newValue } }
     }
+    /// Called with the id after a successful `stopContainer` - a test flips `containers` to a
+    /// stopped snapshot here so the service's stop poll loop sees the transition.
+    var stopContainerHandler: (@Sendable (String) -> Void)? {
+        get { lock.withLock { _stopContainerHandler } }
+        set { lock.withLock { _stopContainerHandler = newValue } }
+    }
     /// Per-container stats; throw to simulate a failure for that container.
     var statsHandler: (@Sendable (String) throws -> Orchard.ContainerStats)? {
         get { lock.withLock { _statsHandler } }
@@ -157,6 +165,7 @@ final class MockContainerBackend: ContainerBackend, @unchecked Sendable {
     var deletedContainers: [(id: String, force: Bool)] { lock.withLock { _deletedContainers } }
     var bootstrapAndStartCount: Int { lock.withLock { _bootstrapAndStartCount } }
     var listContainersCount: Int { lock.withLock { _listContainersCount } }
+    var stoppedContainerIds: [String] { lock.withLock { _stoppedContainerIds } }
 
     func listContainers() async throws -> [Container] {
         lock.withLock { _listContainersCount += 1 }
@@ -165,6 +174,8 @@ final class MockContainerBackend: ContainerBackend, @unchecked Sendable {
     }
     func stopContainer(id: String) async throws {
         if let stopContainerError { throw stopContainerError }
+        lock.withLock { _stoppedContainerIds.append(id) }
+        stopContainerHandler?(id)
     }
     func killContainer(id: String, signal: Int32) async throws {
         if let killContainerError { throw killContainerError }

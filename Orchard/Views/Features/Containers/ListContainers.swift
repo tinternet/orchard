@@ -55,12 +55,22 @@ struct ContainersListView: View {
         let targetContainers = containerListService.containers.filter { targetIds.contains($0.configuration.id) }
         let anyRunning = targetContainers.contains { $0.status.lowercased() == "running" }
         let anyStopped = targetContainers.contains { $0.status.lowercased() != "running" }
+        // Restart only makes sense for the running members of the selection - a stopped one
+        // would be started, which the Start item already covers.
+        let runningIds = targetContainers.filter { $0.status.lowercased() == "running" }.map { $0.configuration.id }
 
         if anyRunning {
             Button(multiple ? "Stop \(targetIds.count) Containers" : "Stop Container") {
                 Task {
                     for id in targetIds {
                         await containerListService.stopContainer(id)
+                    }
+                }
+            }
+            Button(multiple ? "Restart \(runningIds.count) Containers" : "Restart Container") {
+                Task {
+                    for id in runningIds {
+                        await containerListService.restartContainer(id)
                     }
                 }
             }

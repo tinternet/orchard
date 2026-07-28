@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Restart a container in one action**: a Restart button in the container detail header, the menu-bar panel rows, and the multi-selection cards, plus Restart items in the container list and menu-bar context menus (including "Restart running containers" for a multi-selection). The runtime has no restart primitive, so Orchard stops the container, waits for the stop to land, then starts it.
+
 ## [2.1.4] - 2026-07-23
 
 ### Added
